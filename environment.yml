@@ -1,0 +1,13 @@
+name: email-automation-app
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pandas
+  - openpyxl
+  - pip:
+      - streamlit>=1.28.0
+      - plotly
+      - python-dotenv
