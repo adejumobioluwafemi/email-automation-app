@@ -12,7 +12,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+st.logo("staticfiles/dftlabs_logo.png")
+
 st.markdown("""
 <style>
     .main-header {
@@ -366,6 +367,26 @@ Best regards,
                     st.warning(
                         f"✅ {success_count} emails sent, ❌ {failure_count} failed")
 
+
+footer = """
+<style>
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: transparent;
+    color: inherit;
+    text-align: center;
+    padding: 10px;
+    font-size: 0.8rem;
+}
+</style>
+<div class="footer">
+    <p>Powered by <strong>DeepFly Tech Labs</strong></p>
+</div>
+"""
+st.markdown(footer, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
