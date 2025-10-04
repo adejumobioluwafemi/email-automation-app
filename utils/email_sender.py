@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
 from markdown.extensions import Extension
+from email.mime.application import MIMEApplication
 
 
 def markdown_to_html(markdown_text):
@@ -25,7 +26,66 @@ def markdown_to_html(markdown_text):
     return styled_html
 
 
-def send_single_email(recipient_name, recipient_email, subject, body, smtp_config, format_type='markdown'):
+def send_single_email(recipient_name, recipient_email, subject, body, smtp_config, attachments=None, format_type='markdown'):
+    """
+    Send a single personalized email using SMTP with support for multiple attachments
+
+    Args:
+        attachments: List of Streamlit UploadedFile objects
+    """
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = formataddr(
+            (smtp_config['sender_name'], smtp_config['sender_email']))
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+
+        # Personalize the body
+        personalized_body = body.replace('{first_name}', recipient_name)
+
+        if format_type == 'markdown':
+            # Convert Markdown to HTML
+            html_content = markdown_to_html(personalized_body)
+            # plain_text = personalized_body
+        else:
+            html_content = format_email_body(personalized_body, 'html')
+            # plain_text = format_email_body(personalized_body, 'plain')
+
+        # Attach both HTML and plain text versions
+        # msg.attach(MIMEText(plain_text, 'plain'))
+        msg.attach(MIMEText(html_content, 'html'))
+
+        # Add file attachments if provided :cite[1]:cite[2]
+        if attachments:
+            for attachment in attachments:
+                if attachment is not None:
+                    # Read file data and attach to email
+                    file_data = attachment.read()
+                    part = MIMEApplication(file_data, Name=attachment.name)
+                    part['Content-Disposition'] = f'attachment; filename="{attachment.name}"'
+                    msg.attach(part)
+                    # Reset stream position for potential reuse
+                    attachment.seek(0)
+
+        # Connect to SMTP server and send
+        if smtp_config['port'] == 465:
+            server = smtplib.SMTP_SSL(smtp_config['host'], smtp_config['port'])
+        else:
+            server = smtplib.SMTP(smtp_config['host'], smtp_config['port'])
+            server.starttls()
+
+        server.login(smtp_config['sender_email'], smtp_config['password'])
+        server.send_message(msg)
+        server.quit()
+
+        return True, f"✅ Email with {len(attachments) if attachments else 0} attachment(s) sent to {recipient_name} ({recipient_email})"
+
+    except Exception as e:
+        return False, f"❌ Failed to send to {recipient_name}: {str(e)}"
+
+
+def send_single_email1(recipient_name, recipient_email, subject, body, smtp_config, format_type='markdown'):
     """
     Send email with support for Markdown formatting
     """
@@ -70,7 +130,7 @@ def send_single_email(recipient_name, recipient_email, subject, body, smtp_confi
         return False, f"❌ Failed to send to {recipient_name}: {str(e)}"
 
 
-def send_single_email1(recipient_name, recipient_email, subject, body, smtp_config):
+def send_single_email2(recipient_name, recipient_email, subject, body, smtp_config):
     """
     Send a single personalized email using SMTP
     """
@@ -98,43 +158,6 @@ def send_single_email1(recipient_name, recipient_email, subject, body, smtp_conf
         # Add both HTML and plain text versions
         msg.attach(MIMEText(html_content, 'html'))
         # msg.attach(MIMEText(personalized_body, 'plain'))
-
-        # Connect to SMTP server and send
-        if smtp_config['port'] == 465:
-            # SSL connection
-            server = smtplib.SMTP_SSL(smtp_config['host'], smtp_config['port'])
-        else:
-            # TLS connection
-            server = smtplib.SMTP(smtp_config['host'], smtp_config['port'])
-            server.starttls()
-
-        server.login(smtp_config['sender_email'], smtp_config['password'])
-        server.send_message(msg)
-        server.quit()
-
-        return True, f"✅ Email sent to {recipient_name} ({recipient_email})"
-
-    except Exception as e:
-        return False, f"❌ Failed to send to {recipient_name}: {str(e)}"
-
-
-def send_single_email2(recipient_name, recipient_email, subject, body, smtp_config):
-    """
-    Send a single personalized email using SMTP
-    """
-    try:
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = formataddr(
-            (smtp_config['sender_name'], smtp_config['sender_email']))
-        msg['To'] = recipient_email
-        msg['Subject'] = subject
-
-        # Personalize the body
-        personalized_body = body.replace('{first_name}', recipient_name)
-
-        # Add HTML or plain text body
-        msg.attach(MIMEText(personalized_body, 'html'))
 
         # Connect to SMTP server and send
         if smtp_config['port'] == 465:
