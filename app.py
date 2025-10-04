@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from utils.data_loader import load_data_from_file, load_sample_data, validate_dataframe
+from utils.data_loader import load_data_from_file, load_sample_data, validate_dataframe_columns, validate_dataframe
 from utils.email_sender import send_single_email, test_smtp_connection, markdown_to_html
 
 # Page configuration
@@ -42,12 +42,65 @@ st.markdown("""
         border-radius: 5px;
         border-left: 4px solid #1f77b4;
     }
+    .mapping-section {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #1f77b4;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
+def extract_first_name(full_name):
+    """
+    Extract first name from a full name string.
+    Handles cases like "John Doe", "John", "John M. Doe", etc.
+    Returns the original string if no space is found.
+    """
+    if pd.isna(full_name):
+        return ""
+
+    # Convert to string and strip whitespace
+    name_str = str(full_name).strip()
+
+    # Split on spaces and return first part :cite[2]:cite[6]
+    parts = name_str.split()
+    return parts[0] if parts else name_str
+
+
+def apply_column_mapping(df, mapping):
+    """
+    Apply column mapping and extract first names if needed
+    """
+    mapped_df = df.copy()
+
+    # Apply email mapping
+    if 'email' in mapping and mapping['email']:
+        mapped_df['email'] = df[mapping['email']]
+
+    # Apply first name mapping with extraction if needed
+    if 'first_name' in mapping and mapping['first_name']:
+        source_column = mapping['first_name']
+
+        # Check if this is likely a full name column that needs extraction
+        column_name_lower = source_column.lower()
+        needs_extraction = any(term in column_name_lower for term in [
+                               'name', 'full', 'complete'])
+
+        if needs_extraction:
+            mapped_df['first_name'] = df[source_column].apply(
+                extract_first_name)
+            st.info(f"🔧 Extracting first names from '{source_column}' column")
+        else:
+            mapped_df['first_name'] = df[source_column]
+
+    return mapped_df
+
+
 def main():
-    st.markdown('<h1 class="main-header">📧 Automated Email Sender</h1>',
+    st.markdown('<h1 class="main-header">📧 Bulk Mailing Made Easy</h1>',
                 unsafe_allow_html=True)
 
     # Sidebar for SMTP configuration
@@ -107,27 +160,111 @@ def main():
                 uploaded_file = st.file_uploader(
                     "Choose a file",
                     type=['csv', 'xlsx', 'xls'],
-                    help="File should contain 'first_name' and 'email' columns",
+                    help="Upload your file with contact data. We'll help you map the columns.",
                     key="file_uploader"
                 )
 
                 if uploaded_file:
+                    # Load the data
                     df, message = load_data_from_file(uploaded_file)
                     if df is not None:
                         st.success(message)
-                        st.session_state.df = df
+                        st.session_state.original_df = df
+
+                        # Check if we have the required columns
+                        required_columns = ['first_name', 'email']
+                        missing_columns = validate_dataframe_columns(
+                            df, required_columns)
+
+                        if not missing_columns:
+                            # If we have the required columns, use directly
+                            st.session_state.df = df
+                            st.session_state.column_mapping = {
+                                'first_name': 'first_name',
+                                'email': 'email'
+                            }
+                        else:
+                            # Show column mapping interface
+                            st.warning(
+                                f"🔧 **Column mapping required** - Please map your file's columns to the required fields")
+
+                            st.markdown("---")
+                            st.subheader("Column Mapping")
+
+                            available_columns = df.columns.tolist()
+
+                            col_map1, col_map2 = st.columns(2)
+
+                            with col_map1:
+                                # First name mapping
+                                first_name_col = st.selectbox(
+                                    "Select column for First Name:",
+                                    options=[""] + available_columns,
+                                    help="Choose the column that contains first names or full names",
+                                    key="first_name_mapping"
+                                )
+
+                                if first_name_col:
+                                    # Show preview of first names
+                                    if st.button("Preview First Names", key="preview_first_names"):
+                                        preview_data = df[first_name_col].head(
+                                            5)
+                                        st.write("First 5 values:")
+                                        for i, val in enumerate(preview_data):
+                                            extracted = extract_first_name(val)
+                                            st.write(
+                                                f"{i+1}. '{val}' → '{extracted}'")
+
+                            with col_map2:
+                                # Email mapping
+                                email_col = st.selectbox(
+                                    "Select column for Email:",
+                                    options=[""] + available_columns,
+                                    help="Choose the column that contains email addresses",
+                                    key="email_mapping"
+                                )
+
+                            # Apply mapping when both columns are selected
+                            if first_name_col and email_col:
+                                mapping = {
+                                    'first_name': first_name_col,
+                                    'email': email_col
+                                }
+                                st.session_state.column_mapping = mapping
+                                st.session_state.df = apply_column_mapping(
+                                    df, mapping)
+                                st.success("✅ Column mapping applied!")
+
+                                # Show mapping summary
+                                st.info(f"**Mapping Summary:**")
+                                st.write(
+                                    f"- First Name: `{first_name_col}` → `first_name`")
+                                st.write(f"- Email: `{email_col}` → `email`")
+                            else:
+                                st.info(
+                                    "👆 Please select both column mappings to continue")
+
                     else:
                         st.error(message)
             else:
                 if st.button("Load Sample Data", key="load_sample"):
                     df = load_sample_data()
+                    st.session_state.original_df = df
                     st.session_state.df = df
+                    st.session_state.column_mapping = {
+                        'first_name': 'first_name',
+                        'email': 'email'
+                    }
                     st.success("Sample data loaded successfully!")
 
         with col2:
             if 'df' in st.session_state:
                 st.subheader("Data Preview")
-                st.dataframe(st.session_state.df, use_container_width=True)
+
+                # Show mapped data preview
+                preview_df = st.session_state.df[[
+                    'first_name', 'email']].copy()
+                st.dataframe(preview_df, use_container_width=True, height=300)
 
                 st.subheader("Data Validation")
                 errors = validate_dataframe(st.session_state.df)
@@ -139,6 +276,12 @@ def main():
 
                 st.info(f"📊 Total contacts: {len(st.session_state.df)}")
 
+                # Show original vs mapped columns if mapping was applied
+                if 'column_mapping' in st.session_state and 'original_df' in st.session_state:
+                    mapping = st.session_state.column_mapping
+                    original_cols = st.session_state.original_df.columns.tolist()
+                    st.info(
+                        f"**Original columns:** {', '.join(original_cols)}")
     with tab2:
         st.header("Compose Your Email")
 
